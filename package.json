@@ -1,0 +1,16 @@
+{
+  "name": "csv-x",
+  "version": "1.0.0",
+  "description": "Zero-dependency CSV parser and serializer with streaming support, custom delimiters, and RFC 4180 compliance",
+  "main": "src/index.js",
+  "bin": {
+    "csv-x": "src/cli.js"
+  },
+  "scripts": {
+    "test": "node --test test/*.test.js",
+    "demo": "node src/cli.js demo"
+  },
+  "keywords": ["csv", "parser", "serializer", "rfc4180", "streaming", "zero-dependency"],
+  "license": "MIT",
+  "author": "sulthonzh"
+}
