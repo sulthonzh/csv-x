@@ -10,7 +10,30 @@
     "test": "node --test test/*.test.js",
     "demo": "node src/cli.js demo"
   },
-  "keywords": ["csv", "parser", "serializer", "rfc4180", "streaming", "zero-dependency"],
+  "keywords": [
+    "csv",
+    "parser",
+    "serializer",
+    "rfc4180",
+    "streaming",
+    "zero-dependency"
+  ],
   "license": "MIT",
-  "author": "sulthonzh"
+  "author": "sulthonzh",
+  "files": [
+    "src/",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/sulthonzh/csv-x.git"
+  },
+  "homepage": "https://github.com/sulthonzh/csv-x",
+  "bugs": {
+    "url": "https://github.com/sulthonzh/csv-x/issues"
+  }
 }
