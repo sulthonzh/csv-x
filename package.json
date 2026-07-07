@@ -35,5 +35,8 @@
   "homepage": "https://github.com/sulthonzh/csv-x",
   "bugs": {
     "url": "https://github.com/sulthonzh/csv-x/issues"
+  },
+  "devDependencies": {
+    "@changesets/cli": "^2.31.0"
   }
 }
