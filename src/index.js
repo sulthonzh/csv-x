@@ -208,15 +208,33 @@ function createStreamParser(opts = {}) {
       }
 
       if (ch === '\r') {
-        row.push(trim ? field.trim() : field);
-        field = '';
-        if (!(skipEmptyLines && row.length === 1 && row[0] === '')) {
-          collected.push(row);
+        // Check if this is \r\n or lone \r
+        if (i + 1 < buffer.length) {
+          // We have more data — check for \n
+          row.push(trim ? field.trim() : field);
+          field = '';
+          if (!(skipEmptyLines && row.length === 1 && row[0] === '')) {
+            collected.push(row);
+          }
+          row = [];
+          if (buffer[i + 1] === '\n') i++;
+          i++;
+          continue;
+        } else if (isFinal) {
+          // \r at end of buffer on final flush — treat as line ending
+          row.push(trim ? field.trim() : field);
+          field = '';
+          if (!(skipEmptyLines && row.length === 1 && row[0] === '')) {
+            collected.push(row);
+          }
+          row = [];
+          i++;
+          continue;
+        } else {
+          // \r at end of buffer — might be \r\n split across chunks
+          // Leave \r in buffer for next push() to resolve
+          break;
         }
-        row = [];
-        if (i + 1 < buffer.length && buffer[i + 1] === '\n') i++;
-        i++;
-        continue;
       }
 
       if (ch === '\n') {

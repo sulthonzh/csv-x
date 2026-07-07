@@ -1,6 +1,6 @@
 {
   "name": "csv-x",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Zero-dependency CSV parser and serializer with streaming support, custom delimiters, and RFC 4180 compliance",
   "main": "src/index.js",
   "bin": {

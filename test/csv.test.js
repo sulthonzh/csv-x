@@ -4,6 +4,254 @@ const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const { parse, createStreamParser, stringify, toJSON, fromJSON, detectDelimiter } = require('../src/index.js');
 
+// ─── Edge-case: input validation ─────────────────────────────
+
+test('parse: throws TypeError on non-string input', () => {
+  assert.throws(() => parse(123), TypeError);
+  assert.throws(() => parse(null), TypeError);
+  assert.throws(() => parse(undefined), TypeError);
+  assert.throws(() => parse([]), TypeError);
+});
+
+test('parse: throws on multi-char delimiter', () => {
+  assert.throws(() => parse('a,b', { delimiter: ';;' }), /single character/);
+});
+
+test('parse: throws on multi-char quote', () => {
+  assert.throws(() => parse('a,b', { quote: '""' }), /single character/);
+});
+
+// ─── Edge-case: stringify validation ─────────────────────────
+
+test('stringify: throws TypeError on non-array', () => {
+  assert.throws(() => stringify('hello'), TypeError);
+  assert.throws(() => stringify({ a: 1 }), TypeError);
+  assert.throws(() => stringify(null), TypeError);
+});
+
+test('stringify: empty array returns empty string', () => {
+  assert.equal(stringify([]), '\n');
+});
+
+test('stringify: handles Date objects by String()', () => {
+  const d = new Date('2024-01-01');
+  const out = stringify([[d]]);
+  assert.equal(out, String(d) + '\n');
+});
+
+test('stringify: boolean values converted', () => {
+  assert.equal(stringify([[true, false]]), 'true,false\n');
+});
+
+test('stringify: custom line ending', () => {
+  assert.equal(stringify([['a','b']], { lineEnd: '\r\n' }), 'a,b\r\n');
+});
+
+test('stringify: plain objects get Object.values', () => {
+  // Without headers flag, objects in a row get Object.values()'d
+  const out = stringify([{ a: 1, b: 2 }, { a: 3, b: 4 }]);
+  assert.equal(out, '1,2\n3,4\n');
+});
+
+// ─── Edge-case: parse with only whitespace ───────────────────
+
+test('parse: whitespace-only input', () => {
+  assert.deepEqual(parse('   '), [['   ']]);
+});
+
+test('parse: single trailing field without newline', () => {
+  assert.deepEqual(parse('hello'), [['hello']]);
+});
+
+// ─── Edge-case: skipEmptyLines variations ────────────────────
+
+test('parse: skipEmptyLines with CRLF blank lines', () => {
+  assert.deepEqual(parse('a,b\r\n\r\nc,d', { skipEmptyLines: true }), [['a','b'],['c','d']]);
+});
+
+test('parse: skipEmptyLines with multiple consecutive blanks', () => {
+  assert.deepEqual(parse('a,b\n\n\n\nc,d', { skipEmptyLines: true }), [['a','b'],['c','d']]);
+});
+
+test('parse: skipEmptyLines trailing blank', () => {
+  assert.deepEqual(parse('a,b\nc,d\n\n', { skipEmptyLines: true }), [['a','b'],['c','d']]);
+});
+
+// ─── Edge-case: headers mode edge cases ──────────────────────
+
+test('parse: headers with empty data rows', () => {
+  const result = parse('a,b,c', { headers: true });
+  assert.deepEqual(result, []);
+});
+
+test('parse: headers with extra values beyond headers', () => {
+  const result = parse('a,b\n1,2,3', { headers: true });
+  assert.deepEqual(result, [{ a: '1', b: '2' }]);
+  // Extra value '3' is dropped (no header for it)
+});
+
+test('parse: headers preserves empty header names', () => {
+  const result = parse('a,,c\n1,2,3', { headers: true });
+  assert.deepEqual(result, [{ a: '1', '': '2', c: '3' }]);
+});
+
+// ─── Edge-case: relaxed mode ─────────────────────────────────
+
+test('parse: relaxed mode with text after closing quote', () => {
+  const result = parse('"hello" extra,b', { relaxed: true });
+  assert.equal(result[0][0], 'hello extra');
+});
+
+test('parse: relaxed mode with delimiter after quote', () => {
+  const result = parse('"hello",b', { relaxed: true });
+  assert.equal(result[0][0], 'hello');
+});
+
+// ─── Edge-case: stream parser advanced ───────────────────────
+
+test('streamParser: split at delimiter boundary', () => {
+  const sp = createStreamParser();
+  assert.deepEqual(sp.push('a'), []);
+  assert.deepEqual(sp.push(',b\n'), [['a','b']]);
+});
+
+test('streamParser: split at newline boundary', () => {
+  const sp = createStreamParser();
+  assert.deepEqual(sp.push('a,b'), []);
+  assert.deepEqual(sp.push('\nc,d\n'), [['a','b'],['c','d']]);
+});
+
+test('streamParser: escaped quote split across chunks', () => {
+  const sp = createStreamParser();
+  assert.deepEqual(sp.push('"she said '), []);
+  assert.deepEqual(sp.push('""hi""'), []);
+  assert.deepEqual(sp.push('",b\n'), [['she said "hi"','b']]);
+});
+
+test('streamParser: CRLF split across chunks', () => {
+  // \r at end of chunk is treated as potential CRLF — \n at start of next chunk should be consumed
+  const sp = createStreamParser();
+  const r1 = sp.push('a,b\r');
+  const r2 = sp.push('\nc,d\n');
+  // Should yield [['a','b'],['c','d']] across both chunks
+  assert.deepEqual([...r1, ...r2], [['a','b'],['c','d']]);
+});
+
+test('streamParser: flush empty buffer', () => {
+  const sp = createStreamParser();
+  sp.push('a,b\n');
+  assert.deepEqual(sp.flush(), []);
+});
+
+test('streamParser: multiple chunks accumulate correctly', () => {
+  const sp = createStreamParser({ headers: true });
+  sp.push('name');
+  sp.push(',age');
+  sp.push('\n');
+  sp.push('Alice');
+  sp.push(',30');
+  const rows = sp.push('\n');
+  assert.deepEqual(rows, [{ name: 'Alice', age: '30' }]);
+});
+
+test('streamParser: skipEmptyLines', () => {
+  const sp = createStreamParser({ skipEmptyLines: true });
+  assert.deepEqual(sp.push('a,b\n\n'), [['a','b']]);
+  assert.deepEqual(sp.push('c,d\n'), [['c','d']]);
+});
+
+test('streamParser: CR-only at end resolves on flush', () => {
+  const sp = createStreamParser();
+  assert.deepEqual(sp.push('a,b\r'), []);
+  assert.deepEqual(sp.flush(), [['a','b']]);
+});
+
+test('streamParser: CR at end followed by LF in next chunk', () => {
+  const sp = createStreamParser();
+  assert.deepEqual(sp.push('a,b\r'), []);
+  assert.deepEqual(sp.push('\nc,d\n'), [['a','b'],['c','d']]);
+});
+
+test('streamParser: trim option', () => {
+  const sp = createStreamParser({ trim: true });
+  assert.deepEqual(sp.push('  a  , b \n'), [['a','b']]);
+});
+
+// ─── Edge-case: detectDelimiter edge cases ───────────────────
+
+test('detectDelimiter: empty string returns comma', () => {
+  assert.equal(detectDelimiter(''), ',');
+});
+
+test('detectDelimiter: no delimiters found returns comma', () => {
+  assert.equal(detectDelimiter('hello'), ',');
+});
+
+test('detectDelimiter: handles quoted delimiters', () => {
+  // Semicolons inside quotes shouldn't count
+  assert.equal(detectDelimiter('"a;b;c",x,y'), ',');
+});
+
+test('detectDelimiter: single column (no delimiters)', () => {
+  assert.equal(detectDelimiter('just_text'), ',');
+});
+
+// ─── Edge-case: toJSON / fromJSON round-trips ────────────────
+
+test('toJSON: with custom delimiter', () => {
+  const json = toJSON('name;age\nAlice;30', { delimiter: ';' });
+  assert.deepEqual(JSON.parse(json), [{ name: 'Alice', age: '30' }]);
+});
+
+test('fromJSON: round-trip with toJSON', () => {
+  const csv = 'name,age\nAlice,30\n';
+  const json = toJSON(csv);
+  const back = fromJSON(json);
+  assert.equal(back, 'name,age\nAlice,30\n');
+});
+
+test('fromJSON: invalid JSON throws', () => {
+  assert.throws(() => fromJSON('not json'), SyntaxError);
+});
+
+// ─── Edge-case: stringify edge cases ─────────────────────────
+
+test('stringify: field with \r\n', () => {
+  assert.equal(stringify([['line1\r\nline2']]), '"line1\r\nline2"\n');
+});
+
+test('stringify: field equal to quote char', () => {
+  assert.equal(stringify([['"']]), '""""\n');
+});
+
+test('stringify: field equal to delimiter', () => {
+  assert.equal(stringify([[',']]), '","\n');
+});
+
+test('stringify: mixed types in array rows', () => {
+  assert.equal(stringify([[1, 'a', true, null]]), '1,a,true,\n');
+});
+
+test('stringify: object array without headers flag', () => {
+  const out = stringify([{ a: 1, b: 2 }]);
+  // Without headers, objects get Object.values()
+  assert.equal(out, '1,2\n');
+});
+
+// ─── Round-trip: streaming + stringify ────────────────────────
+
+test('round-trip: stream parse then stringify', () => {
+  const sp = createStreamParser({ headers: true });
+  const csv = 'name,age,city\nAlice,30,"New York"\nBob,25,"San Francisco"';
+  const chunk1 = sp.push(csv.slice(0, 20));
+  const chunk2 = sp.push(csv.slice(20));
+  const chunk3 = sp.flush();
+  const allRows = [...chunk1, ...chunk2, ...chunk3];
+  const out = stringify(allRows, { headers: true });
+  const reparsed = parse(out, { headers: true });
+  assert.deepEqual(reparsed, allRows);
+});
+
 test('parse: basic CSV', () => {
   assert.deepEqual(parse('a,b,c\n1,2,3'), [['a','b','c'],['1','2','3']]);
 });
